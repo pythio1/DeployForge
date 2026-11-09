@@ -62,4 +62,3 @@ jobs:
 
       - name: Run integration tests
         run: dotnet test tests/DeployForge.IntegrationTests/DeployForge.IntegrationTests.csproj --configuration Release --no-build
-EOF
