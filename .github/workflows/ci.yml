@@ -1,3 +1,4 @@
+cat > .github/workflows/ci.yml <<'EOF'
 name: DeployForge CI
 
 on:
@@ -28,7 +29,8 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-        rabbitmq:
+
+      rabbitmq:
         image: rabbitmq:4-management
         env:
           RABBITMQ_DEFAULT_USER: deployforge
@@ -40,7 +42,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-
 
     steps:
       - name: Checkout repository
@@ -62,3 +63,4 @@ jobs:
 
       - name: Run integration tests
         run: dotnet test tests/DeployForge.IntegrationTests/DeployForge.IntegrationTests.csproj --configuration Release --no-build
+EOF
