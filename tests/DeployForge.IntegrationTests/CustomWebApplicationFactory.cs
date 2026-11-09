@@ -12,6 +12,8 @@ namespace DeployForge.IntegrationTests;
 public sealed class CustomWebApplicationFactory
     : WebApplicationFactory<Program>
 {
+    private static readonly SemaphoreSlim MigrationLock = new(1, 1);
+
     private const string TestConnectionString =
         "Host=localhost;Port=5432;Database=deployforge_test;" +
         "Username=deployforge;Password=dev_password";
@@ -43,13 +45,20 @@ public sealed class CustomWebApplicationFactory
     {
         var host = builder.Build();
 
-        // Применяем миграции до запуска тестового API.
-        using (var scope = host.Services.CreateScope())
+        MigrationLock.Wait();
+
+        try
         {
+            using var scope = host.Services.CreateScope();
+
             var dbContext = scope.ServiceProvider
                 .GetRequiredService<AppDbContext>();
 
             dbContext.Database.Migrate();
+        }
+        finally
+        {
+            MigrationLock.Release();
         }
 
         host.Start();
