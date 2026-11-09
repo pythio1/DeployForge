@@ -62,3 +62,5 @@ jobs:
 
       - name: Run integration tests
         run: dotnet test tests/DeployForge.IntegrationTests/DeployForge.IntegrationTests.csproj --configuration Release --no-build
+        env:
+          ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Database=deployforge_test;Username=deployforge;Password=dev_password"
