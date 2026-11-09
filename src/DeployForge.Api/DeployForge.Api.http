@@ -1,0 +1,6 @@
+@DeployForge.Api_HostAddress = http://localhost:5148
+
+GET {{DeployForge.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

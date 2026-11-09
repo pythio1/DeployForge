@@ -1,0 +1,26 @@
+# .NET build output
+**/bin/
+**/obj/
+
+# IDE
+.vs/
+.idea/
+.vscode/
+
+# macOS
+.DS_Store
+
+# Editor files
+*.user
+*.suo
+*.swp
+*.swo
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Local configuration
+appsettings.Development.json
+appsettings.Local.json
