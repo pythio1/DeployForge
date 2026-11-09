@@ -1,34 +1,33 @@
-
 using DeployForge.Application.Projects;
 using DeployForge.Domain.Entities;
 using DeployForge.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace DeployForge.IntegrationTests;
 
 public class ProjectRepositoryTests
+    : IClassFixture<CustomWebApplicationFactory>
 {
+    private readonly CustomWebApplicationFactory _factory;
+
+    public ProjectRepositoryTests(CustomWebApplicationFactory factory)
+    {
+        _factory = factory;
+    }
+
     [Fact]
     public async Task AddAsync_ShouldSaveProjectToPostgreSql()
     {
         // Arrange
-        const string connectionString =
-            "Host=localhost;Port=5432;Database=deployforge_test;" +
-            "Username=deployforge;Password=dev_password";
+        await using var scope = _factory.Services.CreateAsyncScope();
 
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql(connectionString)
-            .Options;
-
-        await using var dbContext = new AppDbContext(options);
-
-        // Применяем миграции к отдельной тестовой базе.
-        await dbContext.Database.MigrateAsync();
+        var dbContext = scope.ServiceProvider
+            .GetRequiredService<AppDbContext>();
 
         var repository = new ProjectRepository(dbContext);
 
         var project = new Project(
-            "IntegrationTestProject",
+            $"IntegrationTestProject-{Guid.NewGuid():N}",
             "https://github.com/user/integration-test");
 
         // Act
@@ -42,21 +41,15 @@ public class ProjectRepositoryTests
         Assert.Equal(project.Name, savedProject.Name);
         Assert.Equal(project.RepositoryUrl, savedProject.RepositoryUrl);
     }
+
     [Fact]
     public async Task GetAllAsync_ShouldReturnSavedProjects()
     {
         // Arrange
-        const string connectionString =
-            "Host=localhost;Port=5432;Database=deployforge_test;" +
-            "Username=deployforge;Password=dev_password";
+        await using var scope = _factory.Services.CreateAsyncScope();
 
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql(connectionString)
-            .Options;
-
-        await using var dbContext = new AppDbContext(options);
-
-        await dbContext.Database.MigrateAsync();
+        var dbContext = scope.ServiceProvider
+            .GetRequiredService<AppDbContext>();
 
         var repository = new ProjectRepository(dbContext);
 
@@ -80,21 +73,15 @@ public class ProjectRepositoryTests
         Assert.Contains(projects, p => p.Id == firstProject.Id);
         Assert.Contains(projects, p => p.Id == secondProject.Id);
     }
+
     [Fact]
     public async Task GetByIdAsync_ShouldReturnNull_WhenProjectDoesNotExist()
     {
         // Arrange
-        const string connectionString =
-            "Host=localhost;Port=5432;Database=deployforge_test;" +
-            "Username=deployforge;Password=dev_password";
+        await using var scope = _factory.Services.CreateAsyncScope();
 
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql(connectionString)
-            .Options;
-
-        await using var dbContext = new AppDbContext(options);
-
-        await dbContext.Database.MigrateAsync();
+        var dbContext = scope.ServiceProvider
+            .GetRequiredService<AppDbContext>();
 
         var repository = new ProjectRepository(dbContext);
 
