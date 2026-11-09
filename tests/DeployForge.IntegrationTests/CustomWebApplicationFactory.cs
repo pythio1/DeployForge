@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
 namespace DeployForge.IntegrationTests;
 
@@ -19,7 +20,6 @@ public sealed class CustomWebApplicationFactory
     {
         builder.UseEnvironment("Development");
 
-        // Передаём строку подключения до запуска Program.cs.
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
             configuration.AddInMemoryCollection(
@@ -32,12 +32,28 @@ public sealed class CustomWebApplicationFactory
 
         builder.ConfigureServices(services =>
         {
-            // Удаляем регистрацию основной базы данных.
             services.RemoveAll<DbContextOptions<AppDbContext>>();
 
-            // Подключаем отдельную тестовую базу.
             services.AddDbContext<AppDbContext>(options =>
                 options.UseNpgsql(TestConnectionString));
         });
+    }
+
+    protected override IHost CreateHost(IHostBuilder builder)
+    {
+        var host = builder.Build();
+
+        // Применяем миграции до запуска тестового API.
+        using (var scope = host.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider
+                .GetRequiredService<AppDbContext>();
+
+            dbContext.Database.Migrate();
+        }
+
+        host.Start();
+
+        return host;
     }
 }
