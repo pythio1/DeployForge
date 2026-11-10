@@ -12,6 +12,17 @@ public sealed class Project
 
     // EF Core использует этот конструктор при чтении из БД.
     private Project() { }
+    public RepositoryCredential? RepositoryCredential { get; private set; }
+    public void SetRepositoryCredential(RepositoryCredential credential)
+    {
+        ArgumentNullException.ThrowIfNull(credential);
+
+        if (credential.ProjectId != Id)
+            throw new InvalidOperationException(
+                "Repository credential belongs to another project.");
+
+        RepositoryCredential = credential;
+    }
 
     public Project(string name, string repositoryUrl)
     {
@@ -22,6 +33,7 @@ public sealed class Project
         if (string.IsNullOrWhiteSpace(repositoryUrl))
             throw new ArgumentException(
                 "Repository URL is required.", nameof(repositoryUrl));
+
 
         Id = Guid.NewGuid();
         Name = name.Trim();

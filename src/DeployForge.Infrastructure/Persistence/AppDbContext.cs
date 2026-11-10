@@ -13,7 +13,8 @@ public sealed class AppDbContext(
 
     public DbSet<PipelineStep> PipelineSteps => Set<PipelineStep>();
     public DbSet<PipelineRun> PipelineRuns => Set<PipelineRun>();
-
+    public DbSet<RepositoryCredential> RepositoryCredentials =>
+    Set<RepositoryCredential>();
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -48,6 +49,12 @@ public sealed class AppDbContext(
             .HasMany<PipelineRun>()
             .WithOne()
             .HasForeignKey(run => run.PipelineId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<Project>()
+            .HasOne(project => project.RepositoryCredential)
+            .WithOne()
+            .HasForeignKey<RepositoryCredential>(
+                credential => credential.ProjectId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
