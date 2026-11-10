@@ -24,3 +24,5 @@
 # Local configuration
 appsettings.Development.json
 appsettings.Local.json
+# Local application data and encryption keys
+.data/

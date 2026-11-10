@@ -1,3 +1,4 @@
+using DeployForge.Infrastructure.Security;
 using DeployForge.Application.Projects;
 using DeployForge.Infrastructure.Execution;
 using DeployForge.Application.Pipelines;
@@ -10,6 +11,12 @@ using Microsoft.EntityFrameworkCore;
 using RabbitMQ.Client;
 
 var builder = Host.CreateApplicationBuilder(args);
+var keysDirectory = builder.Configuration[
+    "DEPLOYFORGE_DATAPROTECTION_KEYS_PATH"]
+    ?? throw new InvalidOperationException(
+        "DEPLOYFORGE_DATAPROTECTION_KEYS_PATH is not configured.");
+
+builder.Services.AddDeployForgeDataProtection(keysDirectory);
 
 var connectionString = builder.Configuration
     .GetConnectionString("DefaultConnection")
