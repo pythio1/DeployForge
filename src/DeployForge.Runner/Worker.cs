@@ -2,6 +2,7 @@ using DeployForge.Application.Projects;
 using System.Text.Json;
 using DeployForge.Application.Pipelines;
 using DeployForge.Application.PipelineRuns;
+using DeployForge.Application.RepositoryCredentials;
 using DeployForge.Domain.Enums;
 using DeployForge.Infrastructure.Persistence;
 using Microsoft.Extensions.DependencyInjection;
@@ -168,11 +169,28 @@ public sealed class Worker(
                 var executor = scope.ServiceProvider
                     .GetRequiredService<IPipelineStepExecutor>();
 
+                var credentialRepository = scope.ServiceProvider
+                    .GetRequiredService<IRepositoryCredentialRepository>();
+
+                var credential = await credentialRepository
+                    .GetByProjectIdAsync(project.Id, stoppingToken);
+
+                string? repositorySecret = null;
+
+                if (credential is not null)
+                {
+                    var secretProtector = scope.ServiceProvider
+                        .GetRequiredService<IRepositorySecretProtector>();
+
+                    repositorySecret = secretProtector.Unprotect(
+                        credential.EncryptedSecret);
+                }
+
                 try
                 {
-                    // Выполняем все шаги в одном Docker-контейнере.
                     await executor.ExecuteAsync(
                         project.RepositoryUrl,
+                        repositorySecret,
                         pipeline.Steps.ToList(),
                         stoppingToken);
                     pipelineRun.Succeed();

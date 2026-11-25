@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\DeployForge.Domain\DeployForge.Domain.csproj" />
     <ProjectReference Include="..\..\src\DeployForge.Application\DeployForge.Application.csproj" />
+    <ProjectReference Include="..\..\src\DeployForge.Infrastructure\DeployForge.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

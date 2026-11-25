@@ -36,7 +36,7 @@ public sealed class RepositoryCredential
 
         Id = Guid.NewGuid();
         ProjectId = projectId;
-        Provider = provider.Trim();
+        Provider = provider.Trim().ToLowerInvariant();
         EncryptedSecret = encryptedSecret;
         CreatedAt = DateTimeOffset.UtcNow;
     }

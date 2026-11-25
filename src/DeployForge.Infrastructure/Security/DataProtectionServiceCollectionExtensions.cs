@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.DataProtection;
+using DeployForge.Application.RepositoryCredentials;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace DeployForge.Infrastructure.Security;
@@ -29,6 +30,10 @@ public static class DataProtectionServiceCollectionExtensions
         services.AddDataProtection()
             .SetApplicationName("DeployForge")
             .PersistKeysToFileSystem(directory);
+
+        services.AddSingleton<
+            IRepositorySecretProtector,
+            DataProtectionRepositorySecretProtector>();
 
         return services;
     }

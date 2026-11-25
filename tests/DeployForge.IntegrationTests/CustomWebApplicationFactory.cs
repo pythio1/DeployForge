@@ -1,4 +1,5 @@
 using DeployForge.Infrastructure.Persistence;
+using DeployForge.Application.PipelineRuns;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -13,10 +14,18 @@ public sealed class CustomWebApplicationFactory
     : WebApplicationFactory<Program>
 {
     private static readonly SemaphoreSlim MigrationLock = new(1, 1);
+    private static readonly string DataProtectionKeysPath = Path.Combine(
+        Path.GetTempPath(),
+        $"deployforge-integration-keys-{Environment.ProcessId}");
 
     private const string TestConnectionString =
         "Host=localhost;Port=5432;Database=deployforge_test;" +
         "Username=deployforge;Password=dev_password";
+
+    public CustomWebApplicationFactory()
+    {
+        Directory.CreateDirectory(DataProtectionKeysPath);
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -28,16 +37,20 @@ public sealed class CustomWebApplicationFactory
                 new Dictionary<string, string?>
                 {
                     ["ConnectionStrings:DefaultConnection"] =
-                        TestConnectionString
+                        TestConnectionString,
+                    ["DEPLOYFORGE_DATAPROTECTION_KEYS_PATH"] =
+                        DataProtectionKeysPath
                 });
         });
 
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<DbContextOptions<AppDbContext>>();
+            services.RemoveAll<IPipelineRunQueue>();
 
             services.AddDbContext<AppDbContext>(options =>
                 options.UseNpgsql(TestConnectionString));
+            services.AddSingleton<IPipelineRunQueue, TestPipelineRunQueue>();
         });
     }
 
@@ -64,5 +77,15 @@ public sealed class CustomWebApplicationFactory
         host.Start();
 
         return host;
+    }
+
+    private sealed class TestPipelineRunQueue : IPipelineRunQueue
+    {
+        public Task PublishAsync(
+            PipelineRunRequested message,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
     }
 }

@@ -1,4 +1,3 @@
-
 using DeployForge.Application.PipelineRuns;
 using DeployForge.Domain.Entities;
 using Docker.DotNet;
@@ -26,6 +25,7 @@ public sealed class DockerPipelineStepExecutor : IPipelineStepExecutor
 
     public async Task ExecuteAsync(
         string repositoryUrl,
+        string? repositorySecret,
         IReadOnlyList<PipelineStep> steps,
         CancellationToken cancellationToken = default)
     {
@@ -35,38 +35,22 @@ public sealed class DockerPipelineStepExecutor : IPipelineStepExecutor
                 "Cannot execute a pipeline without steps.");
         }
 
-        if (!Uri.TryCreate(
-                repositoryUrl,
-                UriKind.Absolute,
-                out var repositoryUri) ||
-            repositoryUri.Scheme != Uri.UriSchemeHttps ||
-            string.IsNullOrWhiteSpace(repositoryUri.Host) ||
-            !string.IsNullOrEmpty(repositoryUri.UserInfo) ||
-            !string.IsNullOrEmpty(repositoryUri.Query) ||
-            !string.IsNullOrEmpty(repositoryUri.Fragment))
+        var repositoryUri = ValidateRepositoryUrl(repositoryUrl);
+
+        if (!string.IsNullOrEmpty(repositorySecret) &&
+            !string.Equals(
+                repositoryUri.Host,
+                "github.com",
+                StringComparison.OrdinalIgnoreCase))
         {
             throw new ArgumentException(
-                "Repository URL must be a valid public HTTPS URL without credentials, query, or fragment.",
+                "GitHub credentials can only be used with github.com repositories.",
                 nameof(repositoryUrl));
         }
 
-        var orderedSteps = steps
-            .OrderBy(step => step.Order)
-            .ToList();
-
-        var quotedRepositoryUrl =
-            "'" + repositoryUrl.Replace("'", "'\"'\"'") + "'";
-
-        var script =
-            "set -eu\n" +
-            "command -v git >/dev/null 2>&1 || " +
-            "{ echo 'Git is not installed in the executor image.' >&2; exit 127; }\n" +
-            "mkdir -p /workspace\n" +
-            $"git clone --depth 1 -- {quotedRepositoryUrl} /workspace\n" +
-            "cd /workspace\n" +
-            string.Join("\n", orderedSteps.Select(step => step.Command));
-
-        string? containerId = null;
+        var volumeName = $"deployforge-{Guid.NewGuid():N}";
+        string? cloneContainerId = null;
+        string? executionContainerId = null;
 
         using var timeoutCts =
             CancellationTokenSource.CreateLinkedTokenSource(
@@ -77,62 +61,162 @@ public sealed class DockerPipelineStepExecutor : IPipelineStepExecutor
 
         try
         {
-            _logger.LogInformation(
-                "Creating Docker container using image {Image}.",
-                _options.Image);
+            await _dockerClient.Volumes.CreateAsync(
+                new VolumesCreateParameters { Name = volumeName },
+                timeoutCts.Token);
 
-            var response =
-                await _dockerClient.Containers.CreateContainerAsync(
-                    new CreateContainerParameters
+            cloneContainerId = await CreateAndRunContainerAsync(
+                CreateCloneContainerParameters(
+                    repositoryUrl,
+                    repositorySecret,
+                    volumeName),
+                "repository clone",
+                timeoutCts.Token);
+
+            await RemoveContainerAsync(
+                cloneContainerId,
+                throwOnFailure: true);
+            cloneContainerId = null;
+
+            executionContainerId = await CreateAndRunContainerAsync(
+                CreateExecutionContainerParameters(steps, volumeName),
+                "pipeline execution",
+                timeoutCts.Token);
+        }
+        catch (OperationCanceledException)
+            when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Pipeline execution exceeded the timeout of " +
+                $"{_options.TimeoutSeconds} seconds.");
+        }
+        finally
+        {
+            if (cloneContainerId is not null)
+                await RemoveContainerAsync(cloneContainerId);
+
+            if (executionContainerId is not null)
+                await RemoveContainerAsync(executionContainerId);
+
+            try
+            {
+                await _dockerClient.Volumes.RemoveAsync(
+                    volumeName,
+                    force: true,
+                    CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "Failed to remove Docker volume {VolumeName}.",
+                    volumeName);
+            }
+        }
+    }
+
+    internal CreateContainerParameters CreateCloneContainerParameters(
+        string repositoryUrl,
+        string? repositorySecret,
+        string volumeName)
+    {
+        var environment = new List<string>
+        {
+            "GIT_TERMINAL_PROMPT=0"
+        };
+
+        if (!string.IsNullOrEmpty(repositorySecret))
+        {
+            environment.Add(
+                $"DEPLOYFORGE_REPOSITORY_SECRET={repositorySecret}");
+        }
+
+        return CreateContainerParameters(
+            DockerExecutionScriptBuilder.BuildCloneScript(
+                repositoryUrl,
+                hasSecret: !string.IsNullOrEmpty(repositorySecret)),
+            volumeName,
+            environment);
+    }
+
+    internal CreateContainerParameters CreateExecutionContainerParameters(
+        IReadOnlyList<PipelineStep> steps,
+        string volumeName)
+    {
+        return CreateContainerParameters(
+            DockerExecutionScriptBuilder.BuildExecutionScript(steps),
+            volumeName,
+            environment: []);
+    }
+
+    private CreateContainerParameters CreateContainerParameters(
+        string script,
+        string volumeName,
+        IList<string> environment)
+    {
+        return new CreateContainerParameters
+        {
+            Image = _options.Image,
+            WorkingDir = "/workspace",
+            Entrypoint = ["/bin/sh", "-c"],
+            Cmd = [script],
+            Env = environment,
+            AttachStdout = true,
+            AttachStderr = true,
+            Tty = false,
+            HostConfig = new HostConfig
+            {
+                Memory = _options.MemoryLimitBytes,
+                NanoCPUs = _options.NanoCpus,
+                PidsLimit = 256,
+                Privileged = false,
+                CapDrop = ["ALL"],
+                SecurityOpt = ["no-new-privileges:true"],
+                Mounts =
+                [
+                    new Mount
                     {
-                        Image = _options.Image,
-                        WorkingDir = "/workspace",
-                        Entrypoint = new List<string>
-                        {
-                            "/bin/sh",
-                            "-c"
-                        },
-                        Cmd = new List<string> { script },
-                        AttachStdout = true,
-                        AttachStderr = true,
-                        Tty = false,
-                        HostConfig = new HostConfig
-                        {
-                            Memory = _options.MemoryLimitBytes,
-                            NanoCPUs = _options.NanoCpus,
-                            PidsLimit = 256,
-                            Privileged = false,
-                            CapDrop = new List<string> { "ALL" },
-                            SecurityOpt = new List<string>
-                            {
-                                "no-new-privileges:true"
-                            }
-                        }
-                    },
-                    timeoutCts.Token);
+                        Type = "volume",
+                        Source = volumeName,
+                        Target = "/workspace"
+                    }
+                ]
+            }
+        };
+    }
 
-            containerId = response.ID;
+    private async Task<string> CreateAndRunContainerAsync(
+        CreateContainerParameters parameters,
+        string stage,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation(
+            "Creating Docker container for {Stage} using image {Image}.",
+            stage,
+            _options.Image);
 
-            _logger.LogInformation(
-                "Created Docker container {ContainerId}.",
-                containerId);
+        var response = await _dockerClient.Containers.CreateContainerAsync(
+            parameters,
+            cancellationToken);
 
-            var started =
-                await _dockerClient.Containers.StartContainerAsync(
-                    containerId,
-                    new ContainerStartParameters(),
-                    timeoutCts.Token);
+        var containerId = response.ID;
+
+        try
+        {
+            var started = await _dockerClient.Containers.StartContainerAsync(
+                containerId,
+                new ContainerStartParameters(),
+                cancellationToken);
 
             if (!started)
             {
                 throw new InvalidOperationException(
-                    $"Failed to start container {containerId}.");
+                    $"Failed to start {stage} container {containerId}.");
             }
 
-            var result =
-                await _dockerClient.Containers.WaitContainerAsync(
-                    containerId,
-                    timeoutCts.Token);
+            var result = await _dockerClient.Containers.WaitContainerAsync(
+                containerId,
+                cancellationToken);
 
             using var logStream =
                 await _dockerClient.Containers.GetContainerLogsAsync(
@@ -146,70 +230,82 @@ public sealed class DockerPipelineStepExecutor : IPipelineStepExecutor
                         Timestamps = false,
                         Tail = "all"
                     },
-                    timeoutCts.Token);
+                    cancellationToken);
 
             var (stdout, stderr) =
-                await logStream.ReadOutputToEndAsync(timeoutCts.Token);
+                await logStream.ReadOutputToEndAsync(cancellationToken);
 
             if (!string.IsNullOrWhiteSpace(stdout))
-            {
                 _logger.LogInformation(
-                    "Container stdout:\n{Output}",
+                    "{Stage} stdout:\n{Output}",
+                    stage,
                     stdout);
-            }
 
             if (!string.IsNullOrWhiteSpace(stderr))
-            {
-                _logger.LogError(
-                    "Container stderr:\n{Output}",
+                _logger.LogWarning(
+                    "{Stage} stderr:\n{Output}",
+                    stage,
                     stderr);
-            }
 
             if (result.StatusCode != 0)
             {
                 throw new InvalidOperationException(
-                    $"Pipeline execution failed with exit code " +
-                    $"{result.StatusCode}.");
+                    $"{stage} failed with exit code {result.StatusCode}.");
             }
 
-            _logger.LogInformation(
-                "Container {ContainerId} completed successfully.",
+            return containerId;
+        }
+        catch
+        {
+            await RemoveContainerAsync(containerId);
+            throw;
+        }
+    }
+
+    private async Task RemoveContainerAsync(
+        string containerId,
+        bool throwOnFailure = false)
+    {
+        try
+        {
+            await _dockerClient.Containers.RemoveContainerAsync(
+                containerId,
+                new ContainerRemoveParameters
+                {
+                    Force = true,
+                    RemoveVolumes = false
+                },
+                CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Failed to remove Docker container {ContainerId}.",
                 containerId);
-        }
-        catch (OperationCanceledException)
-            when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new TimeoutException(
-                $"Pipeline execution exceeded the timeout of " +
-                $"{_options.TimeoutSeconds} seconds.");
-        }
-        finally
-        {
-            if (containerId is not null)
-            {
-                try
-                {
-                    await _dockerClient.Containers.RemoveContainerAsync(
-                        containerId,
-                        new ContainerRemoveParameters
-                        {
-                            Force = true,
-                            RemoveVolumes = true
-                        },
-                        CancellationToken.None);
 
-                    _logger.LogInformation(
-                        "Removed Docker container {ContainerId}.",
-                        containerId);
-                }
-                catch (Exception exception)
-                {
-                    _logger.LogWarning(
-                        exception,
-                        "Failed to remove Docker container {ContainerId}.",
-                        containerId);
-                }
-            }
+            if (throwOnFailure)
+                throw;
         }
+    }
+
+    private static Uri ValidateRepositoryUrl(string repositoryUrl)
+    {
+        if (!Uri.TryCreate(
+                repositoryUrl,
+                UriKind.Absolute,
+                out var repositoryUri) ||
+            repositoryUri.Scheme != Uri.UriSchemeHttps ||
+            string.IsNullOrWhiteSpace(repositoryUri.Host) ||
+            !string.IsNullOrEmpty(repositoryUri.UserInfo) ||
+            !string.IsNullOrEmpty(repositoryUri.Query) ||
+            !string.IsNullOrEmpty(repositoryUri.Fragment))
+        {
+            throw new ArgumentException(
+                "Repository URL must be a valid HTTPS URL without credentials, query, or fragment.",
+                nameof(repositoryUrl));
+        }
+
+        return repositoryUri;
     }
 }
