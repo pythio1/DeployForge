@@ -6,6 +6,7 @@ using DeployForge.Application.Projects;
 using DeployForge.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using DeployForge.Infrastructure.Messaging;
+using DeployForge.Application.RepositoryCredentials;
 using RabbitMQ.Client;
 var builder = WebApplication.CreateBuilder(args);
 var keysDirectory = builder.Configuration[
@@ -38,13 +39,19 @@ builder.Services.AddScoped<IPipelineRunRepository, PipelineRunRepository>();
 builder.Services.AddScoped<CreatePipelineRun>();
 builder.Services.AddScoped<GetPipelineRuns>();
 builder.Services.AddScoped<GetPipelineRunById>();
+builder.Services.AddScoped<
+    IRepositoryCredentialRepository,
+    RepositoryCredentialRepository>();
+builder.Services.AddScoped<SetRepositoryCredential>();
+builder.Services.AddScoped<GetRepositoryCredential>();
+builder.Services.AddScoped<DeleteRepositoryCredential>();
 builder.Services.AddSingleton(_ =>
     new ConnectionFactory
     {
-        HostName = "localhost",
-        Port = 5672,
-        UserName = "deployforge",
-        Password = "dev_password"
+        HostName = builder.Configuration["RabbitMQ:HostName"] ?? "localhost",
+        Port = builder.Configuration.GetValue<int>("RabbitMQ:Port", 5672),
+        UserName = builder.Configuration["RabbitMQ:UserName"] ?? "guest",
+        Password = builder.Configuration["RabbitMQ:Password"] ?? "guest"
     });
 
 builder.Services.AddSingleton<IPipelineRunQueue, RabbitMqPipelineRunQueue>();
@@ -81,6 +88,7 @@ app.MapGet("/weatherforecast", () =>
 
 app.MapProjectsEndpoints();
 app.MapPipelinesEndpoints();
+app.MapRepositoryCredentialsEndpoints();
 app.Run();
 public partial class Program
 {

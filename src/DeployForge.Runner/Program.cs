@@ -1,4 +1,5 @@
 using DeployForge.Infrastructure.Security;
+using DeployForge.Application.RepositoryCredentials;
 using DeployForge.Application.Projects;
 using DeployForge.Infrastructure.Execution;
 using DeployForge.Application.Pipelines;
@@ -29,6 +30,9 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<IPipelineRunRepository, PipelineRunRepository>();
 builder.Services.AddScoped<IPipelineRepository, PipelineRepository>();
 builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
+builder.Services.AddScoped<
+    IRepositoryCredentialRepository,
+    RepositoryCredentialRepository>();
 
 builder.Services.AddSingleton(_ =>
     new ConnectionFactory

@@ -123,6 +123,35 @@ namespace DeployForge.Infrastructure.Persistence.Migrations
                     b.ToTable("Projects");
                 });
 
+            modelBuilder.Entity("DeployForge.Domain.Entities.RepositoryCredential", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EncryptedSecret")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId")
+                        .IsUnique();
+
+                    b.ToTable("RepositoryCredentials");
+                });
+
             modelBuilder.Entity("DeployForge.Domain.Entities.Pipeline", b =>
                 {
                     b.HasOne("DeployForge.Domain.Entities.Project", null)
@@ -150,6 +179,15 @@ namespace DeployForge.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("DeployForge.Domain.Entities.RepositoryCredential", b =>
+                {
+                    b.HasOne("DeployForge.Domain.Entities.Project", null)
+                        .WithOne("RepositoryCredential")
+                        .HasForeignKey("DeployForge.Domain.Entities.RepositoryCredential", "ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("DeployForge.Domain.Entities.Pipeline", b =>
                 {
                     b.Navigation("Steps");
@@ -158,6 +196,8 @@ namespace DeployForge.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("DeployForge.Domain.Entities.Project", b =>
                 {
                     b.Navigation("Pipelines");
+
+                    b.Navigation("RepositoryCredential");
                 });
 #pragma warning restore 612, 618
         }

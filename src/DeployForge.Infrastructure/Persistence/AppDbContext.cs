@@ -56,5 +56,13 @@ public sealed class AppDbContext(
             .HasForeignKey<RepositoryCredential>(
                 credential => credential.ProjectId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<RepositoryCredential>()
+            .HasIndex(credential => credential.ProjectId)
+            .IsUnique();
+
+        modelBuilder.Entity<RepositoryCredential>()
+            .Property(credential => credential.Provider)
+            .HasMaxLength(50);
     }
 }
