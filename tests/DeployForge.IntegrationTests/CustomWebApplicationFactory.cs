@@ -25,6 +25,9 @@ public sealed class CustomWebApplicationFactory
     public CustomWebApplicationFactory()
     {
         Directory.CreateDirectory(DataProtectionKeysPath);
+        Environment.SetEnvironmentVariable(
+            "DEPLOYFORGE_DATAPROTECTION_KEYS_PATH",
+            DataProtectionKeysPath);
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
